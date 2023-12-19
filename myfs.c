@@ -58,6 +58,18 @@ unsigned int getBlockSize(Disk *d)
 	return blockSize;
 }
 
+// função auxiliar para encontrar primeiro setor do bloco
+unsigned int findFirstSectorOfBlock(unsigned int blockAddr, Disk *d, unsigned int sectorsPerBlock)
+{
+	int blockSize = getBlockSize(d);
+	unsigned char *sectorBuf[DISK_SECTORDATASIZE]; // setor do disco, de tamanho máximo 512
+	// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
+	unsigned int dataBeginSector;
+	char2ul(sectorBuf[SUPER_DATA_BEGIN_SECTOR], dataBeginSector);	 // dataBeginSector = setor onde começam os dados
+	int firstSector = blockAddr * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
+	return firstSector;
+}
+
 // Funcao para verificacao se o sistema de arquivos está ocioso, ou seja,
 // se nao ha quisquer descritores de arquivos em uso atualmente. Retorna
 // um positivo se ocioso ou, caso contrario, 0.
@@ -99,6 +111,12 @@ int myFSFormat(Disk *d, unsigned int blockSize)
 // em caso de sucesso. Retorna -1, caso contrario.
 int myFSOpen(Disk *d, const char *path)
 {
+
+	/// path - texto do caminho do arquivo
+	/// disco - d > verificar modo read/write do disco
+	/// se arquivo não existir, criar um com esse nome
+	// retornar descritor de arquivo (?)
+	// em caso de erro retorna -1
 	return -1;
 }
 
@@ -128,9 +146,8 @@ int myFSRead(int fd, char *buf, unsigned int nbytes)
 
 	// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
 	unsigned int sectorsPerBlock = blockSize / DISK_SECTORDATASIZE; // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
-	unsigned int dataBeginSector;
-	char2ul(sectorBuf[SUPER_DATA_BEGIN_SECTOR], dataBeginSector);	 // dataBeginSector = setor onde começam os dados
-	int firstSector = blockAddr * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
+
+	int firstSector = findFirstSectorOfBlock(blockAddr, d, sectorsPerBlock); // função que retorna primeiro setor do bloco
 
 	unsigned int bytesRead = 0; // quantos bytes foram lidos do arquivo
 
@@ -189,12 +206,8 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 		}
 
 		// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
-		sectorsPerBlock = blockSize / DISK_SECTORDATASIZE; // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
-
-		unsigned int dataBeginSector;
-		char2ul(sectorBuf[SUPER_DATA_BEGIN_SECTOR], dataBeginSector); // setor onde começam os dados
-
-		int firstSector = freeBlock * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
+		sectorsPerBlock = blockSize / DISK_SECTORDATASIZE;						 // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
+		int firstSector = findFirstSectorOfBlock(freeBlock, d, sectorsPerBlock); // função que retorna primeiro setor do bloco
 
 		int j = 0;
 		for (int i = firstSector; i < sectorsPerBlock; i++)
