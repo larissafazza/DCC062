@@ -20,13 +20,42 @@ char fsid = 3;						// Identificador do tipo de sistema de arquivos
 char *fsname = "LarissaFileSystem"; // Nome do tipo de sistema de arquivos
 int myFSslot;
 
+struct fileDescriptor
+{
+	int status; // 0 se estiver fechado, 1 se estiver aberto.
+	int type;
+	unsigned int fd;
+	// unsigned int pointer;
+	Disk *disk;
+	Inode *inode;
+	char *path;
+};
+
+typedef struct fileDescriptor FileDescriptor;
+FileDescriptor *fileDescriptors[MAX_FDS];
+
+unsigned int blockSize;
+
 // Funcao para verificacao se o sistema de arquivos está ocioso, ou seja,
 // se nao ha quisquer descritores de arquivos em uso atualmente. Retorna
 // um positivo se ocioso ou, caso contrario, 0.
 int myFSIsIdle(Disk *d)
 {
-
-	return 0;
+	// EXPLICANDO A FUNÇÃO: passa por todos os descritores de arquivos (o vetor de fds fd[]),
+	// verificando se existe algum deles em uso ou seja, verifica se existe algum file descriptor
+	// no sistema de arquivos que, simultaneamente não está vazio e se está salvo em um disco d existente.
+	// Caso algum filedescriptor esteja em uso, a função retorna zero, porém, se percorrer a lista toda
+	// e nenhum descritor de arquivo estiver preenchido e conectado corretamente, a unção retorna 1
+	// pois significa que o sistema de arquivos está ocioso.
+	int i = 0;
+	while (i < MAX_FDS)
+	{
+		if (fileDescriptors[i] != NULL && diskGetId(d) == diskGetId(fileDescriptors[i]->disk))
+			return 0;
+		else
+			i++;
+	}
+	return 1;
 }
 
 // Funcao para formatacao de um disco com o novo sistema de arquivos
@@ -35,6 +64,10 @@ int myFSIsIdle(Disk *d)
 // retorna -1.
 int myFSFormat(Disk *d, unsigned int blockSize)
 {
+	// blockSize = tamanho de cada bloco
+
+	// unsigned int numBlocks = (diskGetNumSectors(d) - inodeAreaBeginSector()) / blockSize;
+
 	return -1;
 }
 
@@ -53,7 +86,41 @@ int myFSOpen(Disk *d, const char *path)
 // lidos em caso de sucesso ou -1, caso contrario.
 int myFSRead(int fd, char *buf, unsigned int nbytes)
 {
-	return -1;
+	// verificar se o arquivo está aberto e, se não esiver, retorna -1
+	// e verifica se fd possui um valor válido
+	if (fileDescriptors[fd] == NULL || fileDescriptors[fd]->status == 0 || fd <= 0 || fd > MAX_FDS)
+		return -1;
+
+	Inode *i = fileDescriptors[fd]->inode;
+	Disk *d = fileDescriptors[fd]->disk;
+
+	unsigned int blockAddr = inodeGetBlockAddr(i, 0);
+	if (blockAddr == -1)
+	{
+		printf("\nUm erro ocorreu, bloco não encontrado no Inode");
+		return -1; // um erro ocorreu
+	}
+
+	// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
+	unsigned int sectorsPerBlock = blockSize / DISK_SECTORDATASIZE; // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
+	unsigned int firstSector = (blockAddr - 1) * sectorsPerBlock + 1;
+	unsigned int bytesRead = 0; // quantos bytes foram lidos do arquivo
+
+	while (bytesRead < nbytes) // enquanto o número de bytes lidos for menor que o máximo permitido, fazer leitura
+	{
+		for (int i = firstSector; i < sectorsPerBlock; i++) // percorrer todos os setores do bloco
+		{
+			int readingResult = diskReadSector(d, i, buf);
+			if (readingResult == -1)
+			{
+				printf("Um erro ocorreu ao ler o setor do disco");
+				return -1;
+			}
+			bytesRead += readingResult;
+		}
+	}
+
+	return bytesRead;
 }
 
 // Funcao para a escrita de um arquivo, a partir de um descritor de
@@ -62,7 +129,66 @@ int myFSRead(int fd, char *buf, unsigned int nbytes)
 // efetivamente escritos em caso de sucesso ou -1, caso contrario
 int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 {
-	return -1;
+
+	// verificar se o arquivo está aberto e, se não esiver, retorna -1
+	// e verifica se fd possui um valor válido
+	if (fileDescriptors[fd] == NULL || fileDescriptors[fd]->status == 0 || fd <= 0 || fd > MAX_FDS)
+		return -1;
+
+	Inode *i = fileDescriptors[fd]->inode;
+	Disk *d = fileDescriptors[fd]->disk;
+
+	// achar um bloco livre
+	unsigned int freeBlock = getFreeBlock();
+	if (inodeAddBlock(i, freeBlock) == -1)
+	{
+		"Não foi possível escrever arquivo";
+		return -1;
+	}
+
+	// Tamanho padrao do setor de qualquer disco, em bytes, definido como DISK_SECTORDATASIZE 512
+	unsigned int freeBlock;		   // caminho do bloco livre
+	unsigned int bytesWritten = 0; //
+	unsigned int firstSector = 0;
+	unsigned int sectorsPerBlock = 0;
+	unsigned int firstSector = 0;
+	unsigned char *sectorBuf[DISK_SECTORDATASIZE]; // setor do disco, de tamanho máximo 512
+
+	while (bytesWritten < nbytes)
+	{
+		freeBlock = getFreeBlock();
+		if (inodeAddBlock(i, freeBlock) == -1)
+		{
+			return -1;
+		}
+
+		// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
+		sectorsPerBlock = blockSize / DISK_SECTORDATASIZE; // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
+		firstSector = (freeBlock - 1) * sectorsPerBlock + 1;
+		int j = 0;
+		for (int i = firstSector; i < sectorsPerBlock; i++)
+		{
+			for (j = 0; j < DISK_SECTORDATASIZE; j++)
+			{
+				if (!buf[j])
+				{
+					if (diskWriteSector(d, i, sectorBuf) == 0)
+						return bytesWritten += j;
+					return -1;
+				}
+				sectorBuf[j] = buf[j];
+			}
+
+			if (diskWriteSector(d, i, sectorBuf) == -1)
+			{
+				return -1;
+			}
+		}
+
+		bytesWritten += j;
+	}
+
+	return bytesWritten;
 }
 
 // Funcao para fechar um arquivo, a partir de um descritor de arquivo
