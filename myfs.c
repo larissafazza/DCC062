@@ -34,7 +34,30 @@ struct fileDescriptor
 typedef struct fileDescriptor FileDescriptor;
 FileDescriptor *fileDescriptors[MAX_FDS];
 
-unsigned int blockSize;
+#define SUPER_SECTOR 0			   //    Bloco em que o superblock é escrito
+#define SUPER_METADATA_NUM_ITEMS 8 //    Quantidade de metadados que superblock possui
+#define SUPER_FS_ID 0			   //    Item 1: Número identificador de FS
+#define SUPER_BLOCK_SIZE 1		   //    Item 2: Tamanho de bloco
+#define SUPER_BLOCK_AMOUNT 2	   //    Item 3: Quantidade de blocos
+#define SUPER_INODE_AMOUNT 3	   //    Item 4: Quantidade de inodes
+#define SUPER_INODE_BEGIN_SECTOR 3 //    Item 4: Quantidade de inodes
+#define SUPER_ROOT_BEGIN_SECTOR 3  //    Item 4: Quantidade de inodes
+#define SUPER_ROOT_END_SECTOR 3	   //    Item 4: Quantidade de inodes
+#define SUPER_DATA_BITMAP_SECTOR 6 //    Item 6: Bloco em que começa bitmap de dados
+#define SUPER_DATA_AMOUNT 7		   //    Item 4: Quantidade de blocos de dados
+#define SUPER_DATA_BEGIN_SECTOR 8  //    Item 8: Bloco em que começa os dados
+
+// função auxiliar para calcular o tamanho de um bloco em bytes
+unsigned int getBlockSize(Disk *d)
+{
+	unsigned char *sectorBuf[DISK_SECTORDATASIZE];
+	if (diskReadSector(d, SUPER_SECTOR, sectorBuf) == -1)
+		return -1;
+
+	unsigned int blockSize;
+	char2ul(sectorBuf[SUPER_BLOCK_SIZE], blockSize);
+	return blockSize;
+}
 
 // Funcao para verificacao se o sistema de arquivos está ocioso, ou seja,
 // se nao ha quisquer descritores de arquivos em uso atualmente. Retorna
@@ -93,6 +116,7 @@ int myFSRead(int fd, char *buf, unsigned int nbytes)
 
 	Inode *i = fileDescriptors[fd]->inode;
 	Disk *d = fileDescriptors[fd]->disk;
+	unsigned int blockSize = getBlockSize(d);
 
 	unsigned int blockAddr = inodeGetBlockAddr(i, 0);
 	if (blockAddr == -1)
@@ -129,7 +153,6 @@ int myFSRead(int fd, char *buf, unsigned int nbytes)
 // efetivamente escritos em caso de sucesso ou -1, caso contrario
 int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 {
-
 	// verificar se o arquivo está aberto e, se não esiver, retorna -1
 	// e verifica se fd possui um valor válido
 	if (fileDescriptors[fd] == NULL || fileDescriptors[fd]->status == 0 || fd <= 0 || fd > MAX_FDS)
@@ -137,6 +160,7 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 
 	Inode *i = fileDescriptors[fd]->inode;
 	Disk *d = fileDescriptors[fd]->disk;
+	unsigned int blockSize = getBlockSize(d);
 
 	// achar um bloco livre
 	unsigned int freeBlock = getFreeBlock();
@@ -148,7 +172,7 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 
 	// Tamanho padrao do setor de qualquer disco, em bytes, definido como DISK_SECTORDATASIZE 512
 	unsigned int freeBlock;		   // caminho do bloco livre
-	unsigned int bytesWritten = 0; //
+	unsigned int bytesWritten = 0; // quantos bytes foram escritos do arquivo
 	unsigned int firstSector = 0;
 	unsigned int sectorsPerBlock = 0;
 	unsigned int firstSector = 0;
@@ -164,23 +188,26 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 
 		// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
 		sectorsPerBlock = blockSize / DISK_SECTORDATASIZE; // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
-		firstSector = (freeBlock - 1) * sectorsPerBlock + 1;
+
+		unsigned int dataBeginSector;
+		char2ul(sectorBuf[SUPER_DATA_BEGIN_SECTOR], dataBeginSector); // setor onde começam os dados
+
+		firstSector = freeBlock * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
+
 		int j = 0;
 		for (int i = firstSector; i < sectorsPerBlock; i++)
 		{
-			for (j = 0; j < DISK_SECTORDATASIZE; j++)
+			for (j = 0; j < DISK_SECTORDATASIZE; j++) // percorro o vetor de dados
 			{
 				if (!buf[j])
 				{
-					if (diskWriteSector(d, i, sectorBuf) == 0)
-						return bytesWritten += j;
-					return -1;
+					return bytesWritten += j;
 				}
 				sectorBuf[j] = buf[j];
 			}
-
 			if (diskWriteSector(d, i, sectorBuf) == -1)
 			{
+				printf("Um erro ocorreu ao ");
 				return -1;
 			}
 		}
