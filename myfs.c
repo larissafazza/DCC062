@@ -115,18 +115,23 @@ int myFSRead(int fd, char *buf, unsigned int nbytes)
 
 	Inode *i = fileDescriptors[fd]->inode;
 	Disk *d = fileDescriptors[fd]->disk;
-	unsigned int blockSize = getBlockSize(d);
+	unsigned char *sectorBuf[DISK_SECTORDATASIZE]; // setor do disco, de tamanho máximo 512
+	int blockSize = getBlockSize(d);
 
+	// Funcao que retorna o endereco correspondente ao primeiro bloco no array de blocos de um i-node.
 	unsigned int blockAddr = inodeGetBlockAddr(i, 0);
-	if (blockAddr == -1)
+	if (!blockAddr)
 	{
-		printf("\nUm erro ocorreu, bloco não encontrado no Inode");
-		return -1; // um erro ocorreu
+		printf("Erro ao encontrar o bloco do inode");
+		return -1;
 	}
 
 	// o número de setores por bloco é igual ao tamanho do bloco em bytes, dividido pelo número de bytes por setor
 	unsigned int sectorsPerBlock = blockSize / DISK_SECTORDATASIZE; // DISK_SECTORDATASIZE = Tamanho padrao do setor em bytes
-	unsigned int firstSector = (blockAddr - 1) * sectorsPerBlock + 1;
+	unsigned int dataBeginSector;
+	char2ul(sectorBuf[SUPER_DATA_BEGIN_SECTOR], dataBeginSector);	 // dataBeginSector = setor onde começam os dados
+	int firstSector = blockAddr * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
+
 	unsigned int bytesRead = 0; // quantos bytes foram lidos do arquivo
 
 	while (bytesRead < nbytes) // enquanto o número de bytes lidos for menor que o máximo permitido, fazer leitura
@@ -172,7 +177,6 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 	// Tamanho padrao do setor de qualquer disco, em bytes, definido como DISK_SECTORDATASIZE 512
 	unsigned int freeBlock;						   // caminho do bloco livre
 	unsigned int bytesWritten = 0;				   // quantos bytes foram escritos do arquivo
-	unsigned int firstSector = 0;				   // qual é o primeir setor desse bloco
 	unsigned int sectorsPerBlock = 0;			   // quantidade de setores por bloco
 	unsigned char *sectorBuf[DISK_SECTORDATASIZE]; // setor do disco, de tamanho máximo 512
 
@@ -190,7 +194,7 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 		unsigned int dataBeginSector;
 		char2ul(sectorBuf[SUPER_DATA_BEGIN_SECTOR], dataBeginSector); // setor onde começam os dados
 
-		firstSector = freeBlock * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
+		int firstSector = freeBlock * sectorsPerBlock + dataBeginSector; // primeiro setor do bloco
 
 		int j = 0;
 		for (int i = firstSector; i < sectorsPerBlock; i++)
