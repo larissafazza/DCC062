@@ -25,7 +25,6 @@ struct fileDescriptor
 	int status; // 0 se estiver fechado, 1 se estiver aberto.
 	int type;
 	unsigned int fd;
-	// unsigned int pointer;
 	Disk *disk;
 	Inode *inode;
 	char *path;
@@ -171,11 +170,10 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 	}
 
 	// Tamanho padrao do setor de qualquer disco, em bytes, definido como DISK_SECTORDATASIZE 512
-	unsigned int freeBlock;		   // caminho do bloco livre
-	unsigned int bytesWritten = 0; // quantos bytes foram escritos do arquivo
-	unsigned int firstSector = 0;
-	unsigned int sectorsPerBlock = 0;
-	unsigned int firstSector = 0;
+	unsigned int freeBlock;						   // caminho do bloco livre
+	unsigned int bytesWritten = 0;				   // quantos bytes foram escritos do arquivo
+	unsigned int firstSector = 0;				   // qual é o primeir setor desse bloco
+	unsigned int sectorsPerBlock = 0;			   // quantidade de setores por bloco
 	unsigned char *sectorBuf[DISK_SECTORDATASIZE]; // setor do disco, de tamanho máximo 512
 
 	while (bytesWritten < nbytes)
@@ -207,7 +205,7 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 			}
 			if (diskWriteSector(d, i, sectorBuf) == -1)
 			{
-				printf("Um erro ocorreu ao ");
+				printf("Um erro ocorreu ao escrever setor no disco");
 				return -1;
 			}
 		}
@@ -222,7 +220,25 @@ int myFSWrite(int fd, const char *buf, unsigned int nbytes)
 // existente. Retorna 0 caso bem sucedido, ou -1 caso contrario
 int myFSClose(int fd)
 {
-	return -1;
+	// verificar se o arquivo está aberto e, se não esiver, retorna -1
+	// e verifica se fd possui um valor válido
+	FileDescriptor *fileDescriptor = fileDescriptors[fd];
+	if (fileDescriptor == NULL || fileDescriptor->status == 0 || fd <= 0 || fd > MAX_FDS)
+	{
+		printf("O descritor de arquivo já está fechado\n");
+		return -1;
+	}
+
+	fileDescriptors[fd]->status = 0;			 // muda o status do file descriptor
+	fileDescriptors[fd]->disk == NULL;			 // limpa o ponteiro pro disco no file descriptor
+	if (inodeClear(fileDescriptor->inode) == -1) // chama a função de limpar o inode
+	{
+		printf("Ocorreu um erro ao limpar o inode\n");
+		return -1;
+	}
+	free(fileDescriptor); // limpa o file descriptor desse arquivo
+
+	return 0;
 }
 
 // Funcao para abertura de um diretorio, a partir do caminho
